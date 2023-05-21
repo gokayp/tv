@@ -1,0 +1,278 @@
+//@version=5
+
+indicator('Ote Strateji 🔀', 'Ote 🔀', true, max_lines_count = 500)
+
+tooltip_threshold = 'Sapma, fibo trend çizgisinin yeni bir pivot haline gelmesi için fiyatın önceki pivottan ne kadar sapması gerektiğini etkileyen bir çarpandır.' +
+'\\n\\nDerinlik, fibo çekilirken dikkate alınacak minimum çubuk sayısını etkiler.'
+
+group_fib = '🔀 TwinOte Ayarlar ═══════════════════════════'
+
+i_dev_thresh = ta.atr(10) / close \* 100 \* input.float(3, 'Sapma', minval=0, inline='Pivots', group=group_fib)
+i_depth      = input.int(11, 'Derinlik', minval=1, inline='Pivots', group=group_fib, tooltip=tooltip_threshold)
+i_histPivot  = input.int (0, 'Geriye Öteleme', minval=0, group=group_fib)
+i_levelsS    = 'Small'
+i_levels     = 'Levels + Prices'
+i_levelsP    = 'Last Bar'
+
+i_reverse    = true
+smy_reverse  = false
+i_extendER   = false
+i_histPivot2 = 0
+
+i_fibTime    = false
+i_tzColor    = #2196f3
+
+// ZigZag Settings---------------------------------------------------------------------------------------------- //
+
+i_zigZag     = false
+i_zzColor    = #c77a08
+i_zzStyle    = 'Solid'
+i_zzWidth    = 1
+
+// ---------------------------------------------------------------------------------------------- //
+// -Calculations -------------------------------------------------------------------------------- //
+
+var line lineLast = na
+var int iLast = 0
+var int iPrev = 0
+var float pLast = 0
+var isHighLast = false  // otherwise the last pivot is a low pivot
+
+var iPrevPivot = 0
+var pPrevPivot = 0.
+var iLastPivot = 0
+var pLastPivot = 0.
+
+pivots(src, length, isHigh) =\>
+l2 = length \* 2
+c = nz(src\[length\])
+ok = true
+
+    for i = 0 to l2 by 1
+        if isHigh and src[i] > c
+            ok := false
+            ok
+    
+        if not isHigh and src[i] < c
+            ok := false
+            ok
+    if ok
+        [bar_index[length], c]
+    else
+        [int(na), float(na)]
+
+\[iH, pH\] = pivots(high, i_depth / 2, true)
+\[iL, pL\] = pivots(low, i_depth / 2, false)
+
+calc_dev(base_price, price) =\>
+100 \* (price - base_price) / price
+
+pivotFound(dev, isHigh, index, price) =\>
+if isHighLast == isHigh and not na(lineLast)
+// same direction
+if isHighLast ? price \> pLast : price \< pLast
+line.set_xy2(lineLast, index, price)
+\[lineLast, isHighLast\]
+else
+\[line(na), bool(na)\]
+else
+// reverse the direction (or create the very first line)
+if math.abs(dev) \> i_dev_thresh
+// price move is significant
+
+            // ---------------------------------------------------------------------------------------- //
+            [zzCol, zzWid, zzSty] = if not i_zigZag
+                [na, 1, line.style_dashed]
+            else
+                [i_zzColor, i_zzWidth, i_zzStyle == 'Solid' ? line.style_solid : i_zzStyle == 'Dotted' ? line.style_dotted : line.style_dashed]
+            // ---------------------------------------------------------------------------------------- //
+    
+            id = line.new(iLast, pLast, index, price, color=zzCol, width=zzWid, style=zzSty)
+            [id, isHigh]
+        else
+            [line(na), bool(na)]
+
+if not na(iH)
+dev = calc_dev(pLast, pH)
+\[id, isHigh\] = pivotFound(dev, true, iH, pH)
+
+    if not na(id)
+        if id != lineLast
+            // ---------------------------------------------------------------------------------------- //
+            iPrevPivot := line.get_x1(lineLast)
+            pPrevPivot := line.get_y1(lineLast)
+            iLastPivot := line.get_x2(lineLast)
+            pLastPivot := line.get_y2(lineLast)
+    
+            if not i_zigZag
+            // ---------------------------------------------------------------------------------------- //
+    
+                line.delete(lineLast)
+    
+        lineLast := id
+        isHighLast := isHigh
+        iPrev := iLast
+        iLast := iH
+        pLast := pH
+        pLast
+
+else
+if not na(iL)
+dev = calc_dev(pLast, pL)
+\[id, isHigh\] = pivotFound(dev, false, iL, pL)
+
+        if not na(id)
+            if id != lineLast
+                // ---------------------------------------------------------------------------------------- //
+                iPrevPivot := line.get_x1(lineLast)
+                pPrevPivot := line.get_y1(lineLast)
+                iLastPivot := line.get_x2(lineLast)
+                pLastPivot := line.get_y2(lineLast)
+    
+                if not i_zigZag
+                // ---------------------------------------------------------------------------------------- //
+    
+                    line.delete(lineLast)
+    
+            lineLast := id
+            isHighLast := isHigh
+            iPrev := iLast
+            iLast := iL
+            pLast := pL
+            pLast
+
+iStartBase = i_histPivot  \> 0 ? ta.valuewhen(ta.change(iPrevPivot), iPrevPivot, i_histPivot)      : ta.valuewhen(ta.change(iPrevPivot), iPrevPivot, 0)
+pStartBase = i_histPivot  \> 0 ? ta.valuewhen(ta.change(pPrevPivot), pPrevPivot, i_histPivot)      : ta.valuewhen(ta.change(pPrevPivot), pPrevPivot, 0)
+iEndBase   = i_histPivot  \> 0 ? ta.valuewhen(ta.change(iLastPivot), iLastPivot, i_histPivot  - 1) : line.get_x2(lineLast)
+pEndBase   = i_histPivot  \> 0 ? ta.valuewhen(ta.change(pLastPivot), pLastPivot, i_histPivot  - 1) : line.get_y2(lineLast)
+iMidPivot  = i_histPivot  \> 0 ? ta.valuewhen(ta.change(iPrevPivot), iPrevPivot, i_histPivot  - 1) : line.get_x1(lineLast)
+pMidPivot  = i_histPivot  \> 0 ? ta.valuewhen(ta.change(pPrevPivot), pPrevPivot, i_histPivot  - 1) : line.get_y1(lineLast)
+
+//------------------------------------------------------------------------------
+// Fibo Baseline Draw
+f_drawLineX(\_x1, \_y1, \_x2, \_y2, \_xloc, \_extend, \_color, \_style, \_width) =\>
+var id = line.new(\_x1, \_y1, \_x2, \_y2, \_xloc, \_extend, \_color, \_style, \_width)
+
+    if _y1 > 0 and _y2 > 0
+        line.set_xy1(id, _x1, _y1)
+        line.set_xy2(id, _x2, _y2)
+        line.set_color(id, _color)
+    else
+        line.set_xy1(id, _x1, close)
+        line.set_xy2(id, _x2, close)
+        line.set_color(id, #00000000)
+
+f_drawLabelX(\_x, \_y, \_text, \_xloc, \_yloc, \_color, \_style, \_textcolor, \_size, \_textalign, \_tooltip) =\>
+var id = label.new(\_x, \_y, \_text, \_xloc, \_yloc, \_color, \_style, \_textcolor, \_size, \_textalign, \_tooltip)
+label.set_text(id, i_extendER or i_levelsP == 'Last Bar' ? \_text + '\\n\\n' : \_text)
+label.set_tooltip(id, \_tooltip)
+
+    if _y > 0
+        label.set_xy(id, _x, _y)
+        label.set_textcolor(id, _textcolor)
+    else
+        label.set_xy(id, _x, close)
+        label.set_textcolor(id, #00000000)
+
+f_crossingLevel(\_curret, \_level) =\>
+\_level \> \_curret and \_level \< \_curret\[1\] or \_level \< \_curret and \_level \> \_curret\[1\]
+
+var ln = array.new_line()
+var lb = array.new_label()
+
+f_processLevelX(\_show, \_level, \_color) =\>
+
+    pPivotDiff = math.abs(pMidPivot - pEndBase)
+    price = 0.
+    
+    f_drawLineX(iMidPivot, pMidPivot, iEndBase, pEndBase, xloc.bar_index, extend.none,color.rgb(120, 123, 134, 30), line.style_dashed, 1)
+    
+    price := pEndBase < pMidPivot ? (i_reverse ? pEndBase : pMidPivot) - (i_reverse ? -1 : 1) * pPivotDiff * _level : (i_reverse ? pEndBase : pMidPivot) + (i_reverse ? -1 : 1) * pPivotDiff * _level
+    
+    if _show
+        f_drawLineX(iMidPivot, price, bar_index, price, xloc.bar_index, i_extendER ? extend.both : extend.right, _color, line.style_solid, 1)
+    
+        if i_levels != 'None'
+            bar = i_levelsP == "Last Bar" ? bar_index : iMidPivot
+            style = i_levelsP == "Last Bar" ? label.style_label_left : label.style_label_right
+            size = i_levelsS == 'Small' ? size.small : size.normal
+            f_drawLabelX(bar, price, (i_levels == 'Prices' ? '' : str.tostring(_level)) + (i_levels == 'Levels + Prices' or i_levels == 'Prices' ? ' (' + str.tostring(price, format.mintick) + ')' : ''), xloc.bar_index, yloc.price, #00000000, style, _color, size, text.align_left, str.tostring(price, format.mintick))
+
+show_0  = true
+value_0 = 0.
+color_0 = #787b86
+f_processLevelX(show_0, value_0, color_0)
+
+show_0_5  = true
+value_0_5 = 0.5
+color_0_5 = #ff0000
+f_processLevelX(show_0_5, value_0_5, color_0_5)
+
+show_0_618  = true
+value_0_618 = 0.618
+color_0_618 = #163cfb
+f_processLevelX(show_0_618, value_0_618, color_0_618)
+
+show_0_65  = true
+value_0_65 = 0.705
+color_0_65 = #163cfb
+f_processLevelX(show_0_65, value_0_65, color_0_65)
+
+show_0_786  = true
+value_0_786 = 0.786
+color_0_786 =  #163cfb
+f_processLevelX(show_0_786, value_0_786, color_0_786)
+
+show_1  = true
+value_1 = 1.
+color_1 = #787b86
+f_processLevelX(show_1, value_1, color_1)
+// Fibo Baseline Ending
+// ---------------------------------------------
+
+Current         = i_reverse?(pLast-close)/(pLast-pLastPivot):(close-pLastPivot)/(pLast-pLastPivot)
+
+taramacond =  Current\[1\] \> 0.618 and Current\[1\] \< 0.786
+
+Func() =\>
+
+    taramacond
+
+group_sembol = '🔎 TARAMA YAPILACAK SEMBOLLER ═══════════════════════════'
+S1= input.symbol(defval = 'BINANCE:HOTUSDT.P', inline = 'sg1', group=group_sembol)
+S2= input.symbol(defval = 'BINANCE:ANKRUSDT.P', inline = 'sg1', group=group_sembol)
+S3= input.symbol(defval = 'BINANCE:BATUSDT.P', inline = 'sg2', group=group_sembol)
+S4= input.symbol(defval = 'BINANCE:MASKUSDT.P', inline = 'sg2', group=group_sembol)
+S5= input.symbol(defval = 'BINANCE:ZILUSDT.P', inline = 'sg3', group=group_sembol)
+S6= input.symbol(defval = 'BINANCE:EOSUSDT.P', inline = 'sg3', group=group_sembol)
+S7= input.symbol(defval = 'BINANCE:FTMUSDT.P', inline = 'sg4', group=group_sembol)
+S8= input.symbol(defval = 'BINANCE:ARBUSDT.P', inline = 'sg4', group=group_sembol)
+S9= input.symbol(defval = 'BINANCE:APTUSDT.P', inline = 'sg5', group=group_sembol)
+S10= input.symbol(defval = 'BINANCE:HBARUSDT.P', inline = 'sg5', group=group_sembol)
+
+SmbCagir1 = request.security(S1,'', Func())
+SmbCagir2 = request.security(S2,'', Func())
+SmbCagir3 = request.security(S3,'', Func())
+SmbCagir4 = request.security(S4,'', Func())
+SmbCagir5 = request.security(S5,'', Func())
+SmbCagir6 = request.security(S6,'', Func())
+SmbCagir7 = request.security(S7,'', Func())
+SmbCagir8 = request.security(S8,'', Func())
+SmbCagir9 = request.security(S9,'', Func())
+SmbCagir10 = request.security(S10,'', Func())
+
+Etiket= 'TARAMA SONUÇLARI \\n'
+Etiket:= SmbCagir1 ? Etiket+'🔹'+S1+ '\\n': Etiket
+Etiket:= SmbCagir2 ? Etiket+'🔹'+S2+ '\\n' : Etiket
+Etiket:= SmbCagir3 ? Etiket+'🔹'+S3+ '\\n' : Etiket
+Etiket:= SmbCagir4 ? Etiket+'🔹'+S4+ '\\n' : Etiket
+Etiket:= SmbCagir5 ? Etiket+'🔹'+S5+ '\\n' : Etiket
+Etiket:= SmbCagir6 ? Etiket+'🔹'+S6+ '\\n' : Etiket
+Etiket:= SmbCagir7 ? Etiket+'🔹'+S7+ '\\n' : Etiket
+Etiket:= SmbCagir8 ? Etiket+'🔹'+S8+ '\\n' : Etiket
+Etiket:= SmbCagir9 ? Etiket+'🔹'+S9+ '\\n' : Etiket
+Etiket:= SmbCagir10 ? Etiket+'🔹'+S10+ '\\n' : Etiket
+
+var AnaTrend= table.new(position = position.top_right, columns = 1, rows = 1, bgcolor =color.new(color.black,30), border_width = 1)
+if barstate.islast
+table.cell(AnaTrend, 0,0, Etiket, text_color = color.white, text_valign=text.align_top, text_halign=text.align_left, text_size=size.small)
